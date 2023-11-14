@@ -1,0 +1,38 @@
+name: Package & Publish
+
+# Run workflow on tags starting with v (eg. v2, v1.2.0)
+on:
+  push:
+    tags:
+      - v*
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout
+      - name: Create debpkg structure
+        run: |
+          mkdir -p .debpkg/usr/bin/
+          mkdir -p .debpkg/DEBIAN/
+          echo -e "#!/bin/sh\nchmod +x /usr/bin/apt-repo" > .debpkg/DEBIAN/postinst
+          chmod 755 .debpkg/DEBIAN/postinst
+          cp apt-repo .debpkg/usr/bin
+      - uses: jiro4989/build-deb-action@v2
+        id: package
+        with:
+          package: apt-repo
+          package_root: ./.debpkg
+          maintainer: Julian Lemmerich <mail@julian-lemmerich.de>
+          version: ${{ github.ref }} # refs/tags/v*.*.*
+          arch: 'amd64'
+          depends: 'gpg, dpkg-dev'
+          desc: 'Create the structure for an apt repository to be hosted by nginx.'
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ${{ steps.package.outputs.file_name }}
+          path: ${{ steps.package.outputs.file_name }}
+
+          name: ${{steps.package.outputs.file_name}}
+          path: ${{steps.package.outputs.file_name}}

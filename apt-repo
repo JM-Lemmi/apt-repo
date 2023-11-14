@@ -59,7 +59,6 @@ function genpackages () {
         wget -P pool/main/${pkgindex}/${pkg[0]}/ ${1}
         # TODO overwrite existing file / warn that it isnt named correctly, thus not the file we deal with in the following
     else
-        echo "else"
         cp ${1} pool/main/${pkgindex}/${pkg[0]}
     fi
 
@@ -115,5 +114,5 @@ case "$1" in
 init) shift; genbase "$@" ;;
 add) shift; genpackages "$@" ;;
 release) shift; genrelease "$@" ;;
-* ) break ;;
+*) echo "no --help yet" ;;
 esac
