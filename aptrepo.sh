@@ -1,48 +1,98 @@
 #!/bin/bash
 
-# benötigt dpkg-dev gpg
+# Das script muss im deb ordner des pkg gestartet werden (zB /var/www/html/deb)
 
-# usage: ./script.sh <pkg.deb> <stable/testing>
-# pwd should be the /deb/ folder
+## Sub-Commands as Functions ##
 
-#split package name into information, ${pkg[i]}, 0 package name, 1 semver, 2 arch
-pkgname=${1%.deb} # remove file ending
-pkgname=${pkgname##*/} # remove path
-pkg=(${pkgname//_/ }) # split by _
-pkgindex=${pkg[0]:0:1}
+function genbase () {
+    # Usage: ./aptrepo init <name> <stable/testing> <description>
 
-# Generate Packages
-dpkg-scanpackages --arch ${pkg[2]} pool/main/${pkgindex}/${pkg[0]}/${1} > dists/${2}/main/binary-${pkg[2]}/Packages
-cat dists/${2}/main/binary-${pkg[2]}/Packages | gzip -9 > dists/${2}/main/binary-${pkg[2]}/Packages.gz
+    # Generate Release files
+    cd dists/${2}
 
-# Generate Release files
-cd dists/${2}
-
-cat << EOF > Release
-Origin: JM-Lemmi Repository
+    cat << EOF > base.Release
+Origin: ${1}
 Suite: ${2}
 Codename: ${2}
-Architectures: ${pkg[2]}
 Components: main
-Description: Julian Lemmerich's apt repository
-Date: $(date -Ru)
+Description: ${3}
 EOF
+}
 
-# hacked dict: https://stackoverflow.com/a/4444733
-for h in "MD5Sum:md5sum" "SHA1:sha1sum" "SHA256:sha256sum"; do
-    echo "${h%%:*}:" >> Release
-    f=$(echo $f | cut -c3-) # remove ./ prefix
-    for f in $(find -type f); do
-        if [ "$f" = "Release" ]; then
-            continue
-        fi
-        echo " $(${h##*:} ${f}  | cut -d" " -f1) $(wc -c $f)" >> Release
+function genpackages () {
+    # benötigt dpkg-dev
+
+    # usage: ./apt-repo add <pkg.deb> <stable/testing>
+    # pwd should be the /deb/ folder
+
+    #split package name into information, ${pkg[i]}, 0 package name, 1 semver, 2 arch
+    #TODO: this only works if the pkg.deb path contains the full deb name. maybe instead it should be copied to a temp folder and the information extracted by dpkg to create the destination name
+    pkgname=${1%.deb} # remove file ending
+    pkgname=${pkgname##*/} # remove path
+    pkg=(${pkgname//_/ }) # split by _
+    pkgindex=${pkg[0]:0:1}
+
+    # copy package to pool
+    mkdir -p pool/main/${pkgindex}/${pkg[0]}
+    if [[ ${1} =~ http(s):\/\/.* ]]; then
+        wget -P pool/main/${pkgindex}/${pkg[0]}/ ${1}
+        # TODO overwrite existing file / warn that it isnt named correctly, thus not the file we deal with in the following
+    else
+        echo "else"
+        cp ${1} pool/main/${pkgindex}/${pkg[0]}
+    fi
+
+    # Generate Package snippet for current package
+    dpkg-scanpackages pool/main/${pkgindex}/${pkg[0]}/${pkgname}.deb > dists/${2}/main/binary-${pkg[2]}/${pkg[0]}.Packages
+    cat dists/${2}/main/binary-${pkg[2]}/*.Packages > dists/${2}/main/binary-${pkg[2]}/Packages
+    cat dists/${2}/main/binary-${pkg[2]}/Packages | gzip -9 > dists/${2}/main/binary-${pkg[2]}/Packages.gz
+}
+
+function genrelease () {
+    # benötigt: gpg
+
+    # usage: ./script.sh <stable/testing>
+    # pwd should be the /deb/ folder
+
+    cd dists/${1}/
+
+    # load base config and overwrite current release file
+    cat base.Release > Release
+
+    # Calculate Hashes for all required files (excludes Release, InRelase, Release.gpg and *.Packages)
+    # hacked dict: https://stackoverflow.com/a/4444733
+    for h in "MD5Sum:md5sum" "SHA1:sha1sum" "SHA256:sha256sum"; do
+        echo "${h%%:*}:" >> Release
+        for f in $(find -type f); do
+            f=$(echo $f | cut -c3-) # remove ./ prefix
+            if [ "$f" = "Release" ] || [ "$f" = "InRelease" ] || [ "$f" = "Release.gpg" ] || [ "$f" = "base.Release" ] || [[ ${f} =~ .*\.Packages ]]; then
+                continue
+            fi
+            echo " $(${h##*:} ${f}  | cut -d" " -f1) $(wc -c $f)" >> Release
+        done
     done
-done
 
-# GPG Sign
-export GPG_TTY=$(tty)
-cat Release | gpg -abs > Release.gpg
-cat Release | gpg -abs --clearsign > InRelease
+    # Read existing architectures from folderstructure
+    for d in $(ls --directory main/binary-*); do
+        archs+=(${d##*/binary-})
+    done
+    echo "Architectures: ${archs[@]}" >> Release
 
-cd ../..
+    # add current date
+    echo "Date: $(date -Ru)" >> Release
+
+    # GPG Sign
+    export GPG_TTY=$(tty)
+    cat Release | gpg -abs > Release.gpg
+    cat Release | gpg -abs --clearsign > InRelease
+
+}
+
+## Selector for Command ##
+
+case "$1" in
+init) shift; genbase "$@" ;;
+add) shift; genpackages "$@" ;;
+release) shift; genrelease "$@" ;;
+* ) break ;;
+esac
