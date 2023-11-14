@@ -8,15 +8,36 @@ function genbase () {
     # Usage: ./aptrepo init <name> <stable/testing> <description>
 
     # Generate Release files
-    cd dists/${2}
+    mkdir -p dists/${2}
 
-    cat << EOF > base.Release
+    cat << EOF > dists/${2}/base.Release
 Origin: ${1}
 Suite: ${2}
 Codename: ${2}
 Components: main
 Description: ${3}
 EOF
+
+    # Generate GPG Key
+    # Get Name and Email from Input
+    read -p "Enter your name: " name
+    read -p "Enter your email: " email
+
+    tmp=$(mktemp)
+    cat << EOF > ${tmp}
+%echo Generating a PGP key
+Key-Type: RSA
+Key-Length: 4096
+Name-Real: ${name}
+Name-Email: ${email}
+Expire-Date: 0
+%no-ask-passphrase
+%no-protection
+%commit
+EOF
+
+    gpg --no-tty --batch --gen-key ${tmp}
+    gpg --armor --export ${email} > gpg.key
 }
 
 function genpackages () {
