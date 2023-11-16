@@ -9,9 +9,11 @@ on:
 jobs:
   package:
     runs-on: ubuntu-latest
+    outputs:
+      packagename: ${{ steps.package.outputs.file_name }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout
+        uses: actions/checkout@v3
       - name: Create debpkg structure
         run: |
           mkdir -p .debpkg/usr/bin/
@@ -34,5 +36,16 @@ jobs:
           name: ${{ steps.package.outputs.file_name }}
           path: ${{ steps.package.outputs.file_name }}
 
-          name: ${{steps.package.outputs.file_name}}
-          path: ${{steps.package.outputs.file_name}}
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v3
+        id: download
+        with:
+          name: ${{ needs.package.outputs.packagename }}
+      - uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: "${{ secrets.RELEASE_PAT }}"
+          prerelease: false
+          files: ${{ needs.package.outputs.packagename }}
